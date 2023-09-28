@@ -1,5 +1,7 @@
 #pragma once
 
+#include <libaudit.h>
+
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/server/object.hpp>
@@ -10,7 +12,7 @@
 
 namespace phosphor
 {
-namespace auditLog_Mgr
+namespace auditlog
 {
 
 using ALIface = sdbusplus::xyz::openbmc_project::Logging::server::AuditLog;
@@ -42,21 +44,31 @@ class ALManager : public ALObject
         lg2::debug("Constructing ALManager Path={PATH}", "PATH", path);
     }
 
-    virtual void parseAuditLog(std::string filePath) override
-    {
-        lg2::debug("Method parseAuditLog filePath={FILEPATH}", "FILEPATH",
-                   filePath);
-    }
+    void auditClose(void);
+    bool auditOpen(void);
+    bool auditReopen(void);
+    void auditSetState(bool enable);
+    bool appendItemToBuf(std::string& strBuf, size_t maxBufSize,
+                         const std::string& item);
+
+    virtual void parseAuditLog(std::string filePath) override;
 
     virtual sdbusplus::message::unix_fd getAuditLog() override
     {
         int fd = -1;
 
-        lg2::debug("Method getAuditLog");
-        if (fd == -1)
+        lg2::debug("Method GetAuditLog");
+
+        /* Return the system audit log fd to test interface,
+         * but will be altered to return the parsed file eventually.
+         */
+        if (!auditOpen())
         {
             throw sdbusplus::xyz::openbmc_project::Common::File::Error::Open();
         }
+
+        lg2::debug("auditfd={AUDITFD}", "AUDITFD", auditfd);
+        fd = auditfd;
 
         return fd;
     }
@@ -65,14 +77,24 @@ class ALManager : public ALObject
                           std::string ipAddress, std::string hostname,
                           Result result, std::string detailData) override
     {
+        if (!auditOpen())
+        {
+            lg2::error("Error opening audit socket");
+            return;
+        }
+
+        lg2::debug("auditfd={AUDITFD}", "AUDITFD", auditfd);
+
         lg2::debug(
-            "Method logEvent op={OPERATION} user={USER} addr={ADDR} host={HOST} result={RESULT} detail={DETAIL}",
+            "Method LogEvent op={OPERATION} user={USER} addr={ADDR} host={HOST} result={RESULT} detail={DETAIL}",
             "OPERATION", operation, "USER", username, "ADDR", ipAddress, "HOST",
             hostname, "RESULT", result, "DETAIL", detailData);
     }
 
   private:
+    bool tryOpen = true;
+    int auditfd = -1;
 };
 
-} // namespace auditLog_Mgr
+} // namespace auditlog
 } // namespace phosphor

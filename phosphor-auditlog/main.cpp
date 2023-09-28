@@ -2,7 +2,7 @@
 
 #include "config_main.h"
 
-#include "auditLog-Mgr.hpp"
+#include "auditLogMgr.hpp"
 
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/server/manager.hpp>
@@ -20,7 +20,7 @@ int main(int /*argc*/, char* /*argv*/[])
     // Reserve the dbus service name
     bus.request_name(auditLogBusName);
 
-    phosphor::auditLog_Mgr::ALManager alMgr(bus, auditLogMgrRoot);
+    phosphor::auditlog::ALManager alMgr(bus, auditLogMgrRoot);
 
     // Handle dbus processing forever.
     bus.process_loop();
