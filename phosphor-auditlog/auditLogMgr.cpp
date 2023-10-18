@@ -22,13 +22,19 @@ void ALManager::parseAuditLog(std::string filePath)
     lg2::debug("Method ParseAuditLog filePath={FILEPATH}", "FILEPATH",
                filePath);
 
-    /* Loop over all the events */
-    while (auditParser.auditNextEvent())
+    /* Create output file
+     * TODO: Incorporate this in the constructor
+     */
+    if (auditParser.openParsedFile(filePath))
     {
-        nEvent++;
-        lg2::debug("Getting event: {NEVENT}", "NEVENT", nEvent);
+        /* Loop over all the events */
+        while (auditParser.auditNextEvent())
+        {
+            nEvent++;
+            lg2::debug("Getting event: {NEVENT}", "NEVENT", nEvent);
 
-        auditParser.parseEvent();
+            auditParser.parseEvent();
+        }
     }
 
     return;

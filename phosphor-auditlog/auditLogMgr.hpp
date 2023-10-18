@@ -32,7 +32,12 @@ class ALManager : public ALObject
     ALManager& operator=(const ALManager&) = delete;
     ALManager(ALManager&&) = delete;
     ALManager& operator=(ALManager&&) = delete;
-    virtual ~ALManager() = default;
+
+    ~ALManager()
+    {
+        lg2::debug("Destructing ALManager");
+        auditClose();
+    }
 
     /** @brief Constructor to put object onto bus at a dbus path.
      *  @param[in] bus - Bus to attach to.
@@ -51,9 +56,9 @@ class ALManager : public ALObject
     bool appendItemToBuf(std::string& strBuf, size_t maxBufSize,
                          const std::string& item);
 
-    virtual void parseAuditLog(std::string filePath) override;
+    void parseAuditLog(std::string filePath) override;
 
-    virtual sdbusplus::message::unix_fd getAuditLog() override
+    sdbusplus::message::unix_fd getAuditLog() override
     {
         int fd = -1;
 
@@ -73,9 +78,9 @@ class ALManager : public ALObject
         return fd;
     }
 
-    virtual void logEvent(std::string operation, std::string username,
-                          std::string ipAddress, std::string hostname,
-                          Result result, std::string detailData) override
+    void logEvent(std::string operation, std::string username,
+                  std::string ipAddress, std::string hostname, Result result,
+                  std::string detailData) override
     {
         if (!auditOpen())
         {

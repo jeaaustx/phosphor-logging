@@ -5,9 +5,11 @@
 #include <auparse.h>
 #include <libaudit.h>
 
+#include <nlohmann/json.hpp>
 #include <phosphor-logging/lg2.hpp>
 
 #include <cstring>
+#include <filesystem>
 #include <string>
 
 namespace phosphor
@@ -51,8 +53,68 @@ void ALParser::parseEvent()
 {
     unsigned int nRecords = auparse_get_num_records(au);
 
-    int eventType = auparse_get_type(au);
-    if (eventType == AUDIT_USYS_CONFIG)
+    /* The event itself is a record, and may be the only
+     * one
+     */
+    ALParser::parseRecord();
+
+    /* Handle any additional records for this event */
+    for (unsigned int iter = 1; iter < nRecords; iter++)
+    {
+        auto rc = auparse_next_record(au);
+        lg2::debug("Record={ITER} rc={RC}", "ITER", iter, "RC", rc);
+
+        switch (rc)
+        {
+            case 1:
+            {
+                /* Success finding record, dump its text */
+                ALParser::parseRecord();
+            }
+            break;
+            case 0:
+                /* No more records, something is confused! */
+                lg2::error("Record count and records out of sync");
+                break;
+            case -1:
+            default:
+                /* Error */
+                lg2::error("Failed on record number={ITER}", "ITER", iter);
+                break;
+        }
+    }
+}
+
+void ALParser::parseRecord()
+{
+    nlohmann::json parsedEntry;
+
+    /* Parse record into JSon object.
+     * All record types will have:
+     *   ID
+     *   EventTimestamp
+     *   MessageArgs[]
+     *
+     *   MessageArgs vary based on the record type.
+     *   For non AUDIT_USYS_CONFIG, the type and message are the only args.
+     *   For AUDIT_USYS_CONFIG:
+     *          type
+     *          op
+     *          acct
+     *          exe
+     *          hostname
+     *          addr
+     *          terminal
+     *          res
+     */
+    int recType = auparse_get_type(au);
+
+    auto recTypeName = auparse_get_type_name(au);
+    parsedEntry["TYPE"] = recTypeName;
+    lg2::debug("parsedEntry = {PARSEDENTRY}", "PARSEDENTRY",
+               parsedEntry.dump());
+
+    if (recType == AUDIT_USYS_CONFIG)
     {
         lg2::debug("Found one of our events");
 
@@ -93,43 +155,49 @@ void ALParser::parseEvent()
         } while ((frc = auparse_next_field(au)) == 1);
     }
 
-    lg2::debug("nRecords={NRECS} type={EVENTTYPE}", "NRECS", nRecords,
-               "EVENTTYPE", eventType);
+    lg2::debug("type={RECTYPE}", "RECTYPE", recType);
 
-    /* The event itself is a record, and may be the only
-     * one
-     */
-    auto eventText = auparse_get_record_text(au);
+    auto recMsg = auparse_get_record_text(au);
 
-    lg2::debug("Event Text={TEXT}", "TEXT", eventText);
+    lg2::debug("Record Msg={TEXT}", "TEXT", recMsg);
 
-    /* Handle any additional records for this event */
-    for (unsigned int iter = 1; iter < nRecords; iter++)
+    /* Straight dump of record text to parsedFile */
+    parsedFile << recMsg << '\n';
+
+    return;
+}
+
+bool ALParser::openParsedFile(std::string filePath)
+{
+    std::error_code ec;
+
+    // Check if file already exists. Error out.
+    if (std::filesystem::exists(filePath, ec))
     {
-        auto rc = auparse_next_record(au);
-        lg2::debug("Record={ITER} rc={RC}", "ITER", iter, "RC", rc);
+#if 0
+                lg2::error("File {FILE} already exists. ec: {EC}", "FILE",
+                filePath, "EC", ec);
+#else
+        lg2::error("File {FILE} already exists.", "FILE", filePath);
+#endif
 
-        switch (rc)
-        {
-            case 1:
-            {
-                /* Success finding record, dump its text */
-                auto recText = auparse_get_record_text(au);
-
-                lg2::debug("Record Text={TEXT}", "TEXT", recText);
-            }
-            break;
-            case 0:
-                /* No more records, something is confused! */
-                lg2::error("Record count and records out of sync");
-                break;
-            case -1:
-            default:
-                /* Error */
-                lg2::error("Failed on record number={ITER}", "ITER", iter);
-                break;
-        }
+        return false;
     }
+
+    // Create/Open file using trunc
+    parsedFile.open(filePath, std::ios::trunc);
+    if (parsedFile.fail())
+    {
+        lg2::error("Failed to open {FILE}", "FILE", filePath);
+        return false;
+    }
+
+    // Set permissions on file created, 600
+    std::filesystem::perms permission = std::filesystem::perms::owner_read |
+                                        std::filesystem::perms::owner_write;
+    std::filesystem::permissions(filePath, permission);
+
+    return true;
 }
 
 } // namespace auditlog

@@ -9,6 +9,7 @@
 #include <xyz/openbmc_project/Common/File/error.hpp>
 #include <xyz/openbmc_project/Logging/AuditLog/server.hpp>
 
+#include <fstream>
 #include <string>
 
 namespace phosphor
@@ -49,9 +50,12 @@ class ALParser
 
     bool auditNextEvent();
     void parseEvent();
+    void parseRecord();
+    bool openParsedFile(std::string filePath);
 
   private:
     auparse_state_t* au;
+    std::ofstream parsedFile;
 };
 
 } // namespace auditlog
