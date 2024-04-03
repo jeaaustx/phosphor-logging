@@ -1,5 +1,6 @@
 #include "alog_parser.hpp"
 
+#include "alog_entry.hpp"
 #include "alog_manager.hpp"
 
 #include <auparse.h>
@@ -17,6 +18,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 namespace phosphor::auditlog
 {
@@ -228,7 +230,7 @@ bool ALParser::formatMsgReg(nlohmann::json& parsedEntry)
         throw sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure();
     }
     parsedEntry["EventTimestamp"] = fullTimestamp->sec;
-    parsedEntry["ID"] = std::format("{}.{}:{}", fullTimestamp->sec,
+    parsedEntry["ID"] = std::format("{}_{}_{}", fullTimestamp->sec,
                                     fullTimestamp->milli,
                                     fullTimestamp->serial);
 
@@ -267,7 +269,7 @@ bool ALParser::formatGeneral(nlohmann::json& parsedEntry)
         throw sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure();
     }
     parsedEntry["EventTimestamp"] = fullTimestamp->sec;
-    parsedEntry["ID"] = std::format("{}.{}:{}", fullTimestamp->sec,
+    parsedEntry["ID"] = std::format("{}_{}_{}", fullTimestamp->sec,
                                     fullTimestamp->milli,
                                     fullTimestamp->serial);
 
@@ -441,4 +443,106 @@ bool ALParseLatest::initNextLog()
     return false;
 }
 
+void ALParsePopulate::parseRecord()
+{
+    nlohmann::json parsedEntry;
+
+    if (formatEntry(parsedEntry))
+    {
+        // Keep list limited to maxLeftCount
+        if (parsedEntries.size() >= maxLeftCount)
+        {
+            parsedEntries.pop_front();
+        }
+
+        /*parsedFields = std::tuple<std::string, nlohmann::json>; */
+        parsedFields newEntry = {parsedEntry["ID"], parsedEntry};
+        /* Appending here won't be quite right when needing to read from
+         * another log file. Would want to insert in front of first element of
+         * existing list.
+         * Could also just keep a vector of lists to get to max entries and
+         * then write the lists out from the first one created to the last one
+         * created. That is probably the easiest route.
+         */
+        parsedEntries.emplace_back(newEntry);
+    }
+
+    return;
+}
+
+size_t ALParsePopulate::writeParsedEntries(ALEntryList& entries)
+{
+    lg2::debug("writeParsedEntries");
+
+    /* Add newest events to the file */
+    for (const auto& [iterID, iterEntry] : parsedEntries)
+    {
+        lg2::debug("iterID: {ITERID}", "ITERID", iterID);
+        parsedStream << iterEntry.dump() << '\n';
+
+        entries.createEntry(iterID, iterEntry, getBus());
+    }
+
+    auto parsedCount = parsedEntries.size();
+    parsedEntries.clear();
+
+    lg2::debug("maxLeftCount: {MAXCOUNT} parsedCount: {PARSED}", "MAXCOUNT",
+               maxLeftCount, "PARSED", parsedCount);
+
+    return parsedCount;
+}
+
+bool ALParsePopulate::doParse(size_t maxEntry)
+{
+    maxCount = maxEntry;
+    maxLeftCount = maxEntry;
+
+    if (!initNextLog())
+    {
+        // No more files to parse
+        return false;
+    }
+
+    lg2::debug("Parsing maxCount: {MAXCOUNT}", "MAXCOUNT", maxCount);
+    if (maxCount > 0)
+    {
+        processEvents();
+        return true;
+    }
+
+    return false;
+}
+
+bool ALParsePopulate::initNextLog()
+{
+    if (au != nullptr)
+    {
+        lg2::debug("initNextLog: destroying existing au");
+        auparse_destroy(au);
+        au = nullptr;
+    }
+
+    /* Determine path of next log file to process.
+     * Newest file has no extension and matches 0 index value.
+     */
+    std::string logFilePath = "/var/log/audit/audit.log";
+
+    if (logFileIdx)
+    {
+        logFilePath = std::format("/var/log/audit/audit.log.{}",
+                                  std::to_string(logFileIdx));
+    }
+
+    lg2::debug("initNextLog: Initialize for {FILE}", "FILE", logFilePath);
+    au = auparse_init(AUSOURCE_FILE, logFilePath.c_str());
+
+    if (au != nullptr)
+    {
+        logFileIdx++;
+        return true;
+    }
+
+    // No more files to process
+    return false;
+}
 } // namespace phosphor::auditlog

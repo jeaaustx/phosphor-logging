@@ -1,5 +1,6 @@
 #pragma once
 
+#include "alog_entry.hpp"
 #include "alog_utils.hpp"
 
 #include <auparse.h>
@@ -16,6 +17,7 @@
 #include <fstream>
 #include <list>
 #include <string>
+#include <tuple>
 
 namespace phosphor::auditlog
 {
@@ -252,6 +254,107 @@ class ALParseAll : public ALParser
     {
         return formatGeneral(parsedEntry);
     };
+};
+
+/** @class ALParsePopulate
+ *  @brief Parsing audit log using auparse library services
+ *  @details Provides means to parse latest entries for DBus
+ */
+class ALParsePopulate : public ALParser
+{
+  public:
+    ALParsePopulate(const ALParsePopulate&) = delete;
+    ALParsePopulate& operator=(const ALParsePopulate&) = delete;
+    ALParsePopulate(ALParsePopulate&&) = delete;
+    ALParsePopulate& operator=(ALParsePopulate&&) = delete;
+
+    /* TODO: parseFile is for debug only? */
+
+    /** @brief Constructor to initialize parsing of audit log files
+     *  @param[in] maxEvents Maximum number of events to return.
+     *  @param[in] parsedFile Initialized file for holding parsed log events
+     */
+    ALParsePopulate(uint32_t maxEvents, ALParseFile& parsedFile,
+                    sdbusplus::bus_t& bus) :
+        ALParser(parsedFile),
+        busLog(bus)
+    {
+        lg2::debug("Constructing ALParsePopulate: {MAXCOUNT} {BUS}", "MAXCOUNT",
+                   maxEvents, "BUS", bus.get_unique_name());
+
+        maxCount = maxEvents;
+        maxLeftCount = maxEvents;
+    }
+
+    /* TODO:
+     *  doParse() shouldn't write the entries
+     *  add function for iterating and calling callback to put onto dbus
+     * formatEntry() - format to DBus format
+     */
+
+    /**
+     * @brief Process audit events from initialized au source
+     * @details Limits number of entries written to maxCount.
+     */
+    bool doParse(size_t maxEntry);
+
+    /**
+     * @brief Writes parsedEntries to parsedStream
+     * @details parsedEntries is cleared after entries are written.
+     * @return size_t Number of entries written.
+     */
+    size_t writeParsedEntries(ALEntryList& entries);
+
+    std::function<void(std::string_view)> writeCallback;
+
+    /**
+     * @brief Returns the sdbusplus bus object
+     *
+     * @return sdbusplus::bus_t&
+     */
+    sdbusplus::bus_t& getBus()
+    {
+        lg2::debug("getBus: {NAME}", "NAME", busLog.get_unique_name());
+        return busLog;
+    }
+
+  protected:
+    /**
+     * @brief Format audit entries into JSON using message registry form
+     * @param[in,out] parsedEntry Filled in with parsed audit entry.
+     * @return bool True if parsing succeeded, false otherwise.
+     */
+    bool formatEntry(nlohmann::json& parsedEntry) override
+    {
+        return formatMsgReg(parsedEntry);
+    };
+
+  private:
+    size_t maxCount = 0;
+    size_t maxLeftCount = 0;
+    unsigned int logFileIdx = 0;
+    /* parsedFields: ID, json entry
+     * Allows easy creation of DBus entry by ID
+     */
+    using parsedFields = std::tuple<std::string, nlohmann::json>;
+    std::list<parsedFields> parsedEntries;
+
+    /**
+     * @brief Parses next record into JSON format and adds to list
+     */
+    void parseRecord() override;
+
+    /**
+     * @brief Initializes parser to next audit log available
+     * @details Initializes with the latest audit log first. Each subsequent
+     *         call will initialize with the next oldest audit log file until
+     *         a file cannot be found.
+     * @return bool True if initialization succeeded, false otherwise.
+     */
+    bool initNextLog();
+
+    /** @brief Persistent sdbusplus DBus bus connection. */
+    sdbusplus::bus_t& busLog;
 };
 
 } // namespace phosphor::auditlog

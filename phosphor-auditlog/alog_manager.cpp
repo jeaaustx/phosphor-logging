@@ -1,5 +1,6 @@
 #include "alog_manager.hpp"
 
+#include "alog_entry.hpp"
 #include "alog_parser.hpp"
 #include "alog_utils.hpp"
 
@@ -12,6 +13,7 @@
 #include <xyz/openbmc_project/Common/File/error.hpp>
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 namespace phosphor::auditlog
@@ -78,6 +80,43 @@ sdbusplus::message::unix_fd ALManager::getLatestEntries(uint32_t maxEvents)
         event, std::bind(&ALManager::closeFD, this, fd, std::placeholders::_1));
 
     return fd;
+}
+
+void ALManager::populateAuditLog(uint32_t maxEvents)
+{
+    ALParseFile parsedFile("/tmp/auditDBusEntries.json");
+    size_t maxLeftCount = maxEvents;
+    size_t parsedCount = 0;
+
+    lg2::debug("Method PopulateAuditLog: {FILE} maxEvents: {MAXCOUNT}", "FILE",
+               parsedFile.getPath(), "MAXCOUNT", maxEvents);
+
+    ALParsePopulate auditParser(maxEvents, parsedFile, getBus());
+
+    /* Clears any pre-existing entries and sets limit for new ones */
+    auditEntries.setMax(maxEvents);
+
+    while (parsedCount < maxLeftCount)
+    {
+        lg2::debug(
+            "populateAuditLog: parsedCount: {PARSEDCOUNT} maxLeftCount: {MAXLEFT}",
+            "PARSEDCOUNT", parsedCount, "MAXLEFT", maxLeftCount);
+        maxLeftCount -= parsedCount;
+
+        // Parse events up to maxEvents specified
+        if (!auditParser.doParse(maxLeftCount))
+        {
+            // No more to process
+            break;
+        }
+
+        /* TODO: For correct D-Bus object ordering, need to append subsequent
+         * elements to existing list. Then do a single write of the list. (Need
+         * to create objects oldest to newest.
+         */
+        // Add newest entries to auditEntries
+        parsedCount = auditParser.writeParsedEntries(std::ref(auditEntries));
+    }
 }
 
 int ALManager::openParseFD(const ALParseFile& parsedFile)

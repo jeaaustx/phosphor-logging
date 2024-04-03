@@ -1,5 +1,6 @@
 #pragma once
 
+#include "alog_entry.hpp"
 #include "alog_utils.hpp"
 
 #include <libaudit.h>
@@ -10,8 +11,10 @@
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/source/event.hpp>
 #include <xyz/openbmc_project/Common/File/error.hpp>
+#include <xyz/openbmc_project/Logging/AuditLog/AuditEntry/server.hpp>
 #include <xyz/openbmc_project/Logging/AuditLog/server.hpp>
 
+#include <memory>
 #include <string>
 
 namespace phosphor::auditlog
@@ -41,7 +44,10 @@ class ALManager : public ALObject
      *  @param[in] path - Path to attach at.
      */
     ALManager(sdbusplus::bus_t& bus, const std::string& path) :
-        ALObject(bus, path.c_str()){};
+        ALObject(bus, path.c_str()), busLog(bus)
+    {
+        lg2::debug("Bus: {NAME}", "NAME", bus.get_unique_name());
+    };
 
     /**
      * @brief Parses all audit log events into JSON format.
@@ -58,6 +64,19 @@ class ALManager : public ALObject
      * @return unix_fd A read-only file descriptor to the parsed file.
      */
     sdbusplus::message::unix_fd getLatestEntries(uint32_t maxCount) override;
+
+    void populateAuditLog(uint32_t maxCount) override;
+
+    /**
+     * @brief Returns the sdbusplus bus object
+     *
+     * @return sdbusplus::bus_t&
+     */
+    sdbusplus::bus_t& getBus()
+    {
+        lg2::debug("getBus: {NAME}", "NAME", busLog.get_unique_name());
+        return busLog;
+    }
 
   private:
     /**
@@ -85,6 +104,14 @@ class ALManager : public ALObject
      * @param[in] source - The event source object used
      */
     void closeFD(int fd, sdeventplus::source::EventBase& source);
+
+    /**
+     * @brief Tracks Audit Log entry pointers.
+     */
+    ALEntryList auditEntries;
+
+    /** @brief Persistent sdbusplus DBus bus connection. */
+    sdbusplus::bus_t& busLog;
 };
 
 } // namespace phosphor::auditlog
