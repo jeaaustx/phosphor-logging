@@ -15,7 +15,7 @@ extra_args = []
 # extra_args += ['-DAUDITLOG_FULL_DEBUG',]
 
 # Add to keep JSON file around on exit of method
-# extra_args += ['-DAUDITLOG_KEEP_JSONFILE',]
+extra_args += ['-DAUDITLOG_KEEP_JSONFILE',]
 
 executable('phosphor-auditlog',
     auditlog_sources,

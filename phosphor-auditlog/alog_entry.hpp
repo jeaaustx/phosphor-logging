@@ -156,25 +156,6 @@ class ALEntryList
                            "VALUE", item.value());
                 entryData.emplace(item.key(), ts);
             }
-            else if (item.key() == "MessageArgs")
-            {
-                if (!item.value().is_array())
-                {
-                    lg2::debug("Skipping item {KEY}:{VALUE} expected array",
-                               "KEY", item.key(), "VALUE", item.value());
-                }
-                else
-                {
-                    lg2::debug("Adding item {KEY}:{VALUE}", "KEY", item.key(),
-                               "VALUE", item.value());
-                    std::vector<std::string> itemData;
-                    for (const auto& entry : item.value().items())
-                    {
-                        itemData.emplace_back(entry.value());
-                    }
-                    entryData.emplace(item.key(), itemData);
-                }
-            }
             else
             {
                 /* Everything else is just a plain string, just handle */
